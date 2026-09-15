@@ -1,0 +1,226 @@
+"""Image loading, transforms and dataset discovery / splitting."""
+
+from __future__ import annotations
+
+import json
+import random
+from dataclasses import dataclass
+from pathlib import Path
+
+import torch
+from PIL import Image, ImageOps
+from torch.utils.data import Dataset
+from torchvision import transforms as T
+
+CLASSES: tuple[str, ...] = ("normal", "foul")
+CLASS_TO_IDX = {c: i for i, c in enumerate(CLASSES)}
+IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD = (0.229, 0.224, 0.225)
+PAD_FILL = (114, 114, 114)
+
+
+# ----------------------------------------------------------------------------
+# Loading helpers
+# ----------------------------------------------------------------------------
+def load_image(path: str | Path) -> Image.Image:
+    """Open an image, apply EXIF orientation (phone photos!) and return RGB."""
+    img = Image.open(path)
+    img = ImageOps.exif_transpose(img)
+    return img.convert("RGB")
+
+
+def list_images(folder: str | Path) -> list[Path]:
+    folder = Path(folder)
+    if not folder.is_dir():
+        return []
+    return sorted(
+        p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in IMG_EXTS
+    )
+
+
+# ----------------------------------------------------------------------------
+# Transforms
+# ----------------------------------------------------------------------------
+class Letterbox:
+    """Resize so the longer side == size, keep aspect ratio, pad to a square.
+
+    Nothing is cropped, so the mouse pad border never leaves the frame.
+    """
+
+    def __init__(self, size: int, fill=PAD_FILL):
+        self.size = int(size)
+        self.fill = fill
+
+    def __call__(self, img: Image.Image) -> Image.Image:
+        w, h = img.size
+        s = self.size / max(w, h)
+        nw, nh = max(1, round(w * s)), max(1, round(h * s))
+        img = img.resize((nw, nh), Image.BILINEAR)
+        canvas = Image.new("RGB", (self.size, self.size), self.fill)
+        canvas.paste(img, ((self.size - nw) // 2, (self.size - nh) // 2))
+        return canvas
+
+    def __repr__(self):
+        return f"Letterbox(size={self.size})"
+
+
+class RandomRot90:
+    """Lossless 0/90/180/270 degree rotation (top-down photos have no 'up')."""
+
+    def __call__(self, img: Image.Image) -> Image.Image:
+        k = random.randint(0, 3)
+        return img.rotate(90 * k, expand=True) if k else img
+
+    def __repr__(self):
+        return "RandomRot90()"
+
+
+def train_transforms(img_size: int) -> T.Compose:
+    # Deliberately *no* RandomResizedCrop / translate: cropping the pad edge
+    # would change what the label means. Scale only shrinks (adds margin) and
+    # rotation is small so at most the extreme corners of the photo are lost.
+    return T.Compose(
+        [
+            Letterbox(img_size),
+            T.RandomHorizontalFlip(),
+            T.RandomVerticalFlip(),
+            RandomRot90(),
+            T.RandomAffine(degrees=8, scale=(0.75, 1.0), fill=PAD_FILL),
+            T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.03),
+            T.ToTensor(),
+            T.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+        ]
+    )
+
+
+def eval_transforms(img_size: int) -> T.Compose:
+    return T.Compose(
+        [
+            Letterbox(img_size),
+            T.ToTensor(),
+            T.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+        ]
+    )
+
+
+# ----------------------------------------------------------------------------
+# Dataset
+# ----------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Sample:
+    path: Path
+    label: int
+
+    @property
+    def class_name(self) -> str:
+        return CLASSES[self.label]
+
+
+class HandFoulDataset(Dataset):
+    def __init__(self, samples: list[Sample], transform):
+        self.samples = list(samples)
+        self.transform = transform
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int):
+        s = self.samples[idx]
+        img = load_image(s.path)
+        return self.transform(img), s.label
+
+    def class_counts(self) -> list[int]:
+        counts = [0] * len(CLASSES)
+        for s in self.samples:
+            counts[s.label] += 1
+        return counts
+
+
+# ----------------------------------------------------------------------------
+# Discovery & split
+# ----------------------------------------------------------------------------
+def _samples_in(class_root: Path) -> list[Sample]:
+    out: list[Sample] = []
+    for cls in CLASSES:
+        for p in list_images(class_root / cls):
+            out.append(Sample(p, CLASS_TO_IDX[cls]))
+    return out
+
+
+def discover_splits(
+    data_dir: str | Path,
+    val_ratio: float = 0.15,
+    test_ratio: float = 0.15,
+    seed: int = 42,
+) -> tuple[dict[str, list[Sample]], dict]:
+    """Return ({"train": [...], "val": [...], "test": [...]}, info).
+
+    Two layouts are supported:
+
+    A) pre-split (used as-is):
+        data/train/{normal,foul}/  data/val/{normal,foul}/  data/test/{normal,foul}/
+    B) flat (random stratified split with a fixed seed):
+        data/{normal,foul}/
+    """
+    data_dir = Path(data_dir)
+    if not data_dir.is_dir():
+        raise FileNotFoundError(f"data dir not found: {data_dir}")
+
+    if (data_dir / "train").is_dir():
+        splits = {
+            "train": _samples_in(data_dir / "train"),
+            "val": _samples_in(data_dir / "val"),
+            "test": _samples_in(data_dir / "test"),
+        }
+        if not splits["val"]:
+            splits["val"] = splits["test"]
+        info = {"layout": "pre-split", "data_dir": str(data_dir)}
+    else:
+        rng = random.Random(seed)
+        splits = {"train": [], "val": [], "test": []}
+        for cls in CLASSES:
+            items = [Sample(p, CLASS_TO_IDX[cls]) for p in list_images(data_dir / cls)]
+            rng.shuffle(items)
+            n = len(items)
+            n_test = int(round(n * test_ratio))
+            n_val = int(round(n * val_ratio))
+            if n >= 3:  # make sure every split gets at least one of each class
+                n_test = max(1, n_test)
+                n_val = max(1, n_val)
+            splits["test"] += items[:n_test]
+            splits["val"] += items[n_test : n_test + n_val]
+            splits["train"] += items[n_test + n_val :]
+        info = {
+            "layout": "flat-random",
+            "data_dir": str(data_dir),
+            "seed": seed,
+            "val_ratio": val_ratio,
+            "test_ratio": test_ratio,
+        }
+
+    for name in ("train", "val", "test"):
+        if not splits[name]:
+            raise RuntimeError(
+                f"split '{name}' is empty. Put labelled images in "
+                f"{data_dir}/normal and {data_dir}/foul (at least ~3 per class), "
+                f"or use the pre-split layout {data_dir}/train|val|test/<class>/."
+            )
+    return splits, info
+
+
+def save_split(splits: dict[str, list[Sample]], info: dict, path: str | Path) -> None:
+    payload = {
+        "info": info,
+        "classes": list(CLASSES),
+        **{k: [{"path": str(s.path), "label": s.class_name} for s in v] for k, v in splits.items()},
+    }
+    Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def seed_everything(seed: int) -> None:
+    random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)

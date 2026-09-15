@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hand-foul"
+version = "0.1.0"
+description = "Classify top-down hand photos as normal (hand inside the mouse pad) or foul (hand outside)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "chong" }]
+keywords = ["image-classification", "pytorch", "computer-vision"]
+dependencies = [
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "pillow>=9.0",
+    "opencv-python>=4.8",
+    "numpy>=1.24",
+    "typer>=0.9",
+    "matplotlib>=3.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+hand-foul = "hand_foul.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["hand_foul*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,29 @@
+# --- raw photo data (never commit) -----------------------------------------
+data/**
+!data/**/
+!data/**/.gitkeep
+hand_photos/
+
+# --- training / inference artefacts -----------------------------------------
+runs/
+predictions/
+weights/*.pt
+weights/*.pth
+!weights/.gitkeep
+
+# --- python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+.env
+
+# --- editors / os -----------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

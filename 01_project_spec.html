@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>손 위치 반칙 분류 모델 — 요구사항</title>
+<style>
+  :root{--bg:#fafaf8;--fg:#1f2328;--muted:#5b6470;--line:#e3e1dc;--accent:#c0392b;--ok:#1e7f4f;--code:#f2f1ee}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",sans-serif}
+  .wrap{max-width:860px;margin:0 auto;padding:40px 20px 80px}
+  h1{font-size:28px;margin:0 0 6px;letter-spacing:-.02em}
+  .sub{color:var(--muted);margin:0 0 28px}
+  h2{font-size:20px;margin:40px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+  p{margin:0 0 12px}
+  ul,ol{margin:0 0 12px;padding-left:22px}
+  li{margin:4px 0}
+  code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  pre{background:#23272e;color:#e6e6e6;padding:14px 16px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.5}
+  pre code{background:none;color:inherit;padding:0;font-size:inherit}
+  table{border-collapse:collapse;width:100%;margin:8px 0 16px;font-size:14px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#f1efea}
+  .kv td:first-child{width:130px;font-weight:600;background:#faf9f6}
+  .tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px}
+  .ok{background:#e3f4ea;color:var(--ok)}
+  .foul{background:#fbe5e2;color:var(--accent)}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0}
+  .muted{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>손 위치 반칙 분류 모델 — 요구사항</h1>
+<p class="sub">2026-09-15 · 클로드코드 전달용 · 이 문서는 "무엇을"만 정하고 "어떻게"는 구현자가 정한다</p>
+
+<h2>1. 목표</h2>
+<p>사진 1장을 넣으면 <span class="tag ok">normal</span> 또는 <span class="tag foul">foul</span> 로 분류하는 이미지 분류 모델. 학습 코드와 추론 코드를 모두 만들고, GitHub에 올리면 다른 사람이 clone 해서 바로 내 모델을 쓸 수 있게 패키지로 모듈화한다.</p>
+<table class="kv">
+  <tr><td>normal</td><td>손이 마우스패드(빨간 테두리 검정 패드) 안에 있음</td></tr>
+  <tr><td>foul</td><td>손이 마우스패드 밖으로 나가 있음 (일부라도)</td></tr>
+  <tr><td>입력</td><td>스마트폰으로 위에서 찍은 사진 (JPG/PNG)</td></tr>
+  <tr><td>출력</td><td>라벨 + 확신도</td></tr>
+</table>
+<p>분류 기준의 세부 사항은 <b>02_labeling_guide.html</b>에 있다. 학습 데이터는 그 가이드대로 라벨링해서 제공한다.</p>
+
+<h2>2. 꼭 지켜야 하는 것</h2>
+<ol>
+  <li><b>학습 코드</b> — 라벨링된 사진 폴더를 넣으면 학습되고, 학습된 가중치 파일이 나온다. 학습 후 test 셋 정확도와 confusion matrix를 보여준다.</li>
+  <li><b>추론 코드</b> — 사진 1장 또는 폴더를 넣으면 결과가 나온다. <b>결과가 눈에 보여야 한다</b>: 원본 사진 위에 예측 라벨과 확신도를 얹은 이미지를 화면에 띄우거나 파일로 저장한다 (normal은 초록, foul은 빨강 같은 식으로 한눈에 구분되게). 터미널 텍스트 출력만으로는 부족하다.</li>
+  <li><b>모듈화 &amp; 공유</b> — 아래 두 가지 사용 방식이 모두 가능해야 한다.
+    <pre><code># CLI
+hand-foul predict photo.jpg
+hand-foul train --data data/
+
+# Python
+from hand_foul import Classifier
+clf = Classifier.from_pretrained("weights/best.pt")
+result = clf.predict("photo.jpg")     # {"label": "foul", "confidence": 0.93}
+clf.show("photo.jpg")                  # 라벨 얹힌 이미지 표시/저장</code></pre>
+    <code>pip install .</code> 혹은 <code>pip install git+https://github.com/...</code> 로 설치되는 표준 파이썬 패키지 구조(pyproject.toml).</li>
+  <li><b>README</b> — 처음 보는 사람이 README만 보고 설치 → 내 가중치로 추론 → 자기 데이터로 재학습까지 할 수 있게. 데이터 폴더 구조, 명령어 예시, 결과 이미지 예시 포함.</li>
+  <li><b>가중치 배포</b> — 학습된 가중치를 다른 사람이 받을 수 있게 한다 (GitHub Release 첨부, 또는 레포에 포함할 만큼 작으면 포함). 파일 크기·방식은 구현자가 판단.</li>
+  <li><b>.gitignore</b> — 원본 사진 데이터와 학습 중간 산출물은 커밋되지 않게.</li>
+  <li><b>테스트</b> — 실제 사진 없이도 더미 이미지로 학습 → 추론이 끝까지 도는 스모크 테스트 하나.</li>
+  <li><b>라벨링 도구</b> — 찍은 사진을 <b>한 폴더(예: <code>data/inbox/</code>)에 몽땅 넣어두면</b>, 창을 띄워서 사진을 한 장씩 크게 보여주고 키 하나로 분류하는 도구.
+    <ul>
+      <li>키: <code>1</code> = normal, <code>2</code> = foul, <code>s</code> = 건너뛰기(애매한 것), <code>z</code> = 직전 것 되돌리기, <code>q</code> = 종료</li>
+      <li>분류하면 파일이 해당 클래스 폴더로 <b>이동</b>하고, 남은 장수 / 지금까지 normal·foul 개수가 화면에 보인다</li>
+      <li>중간에 끄고 다시 켜도 inbox에 남은 것부터 이어서 할 수 있다</li>
+      <li>EXIF 회전 적용해서 사진이 눕지 않게 보여준다</li>
+      <li>실행: <code>hand-foul label</code> (CLI에 포함). 창 띄우는 방식(OpenCV 창, tkinter 등)은 구현자가 정한다</li>
+    </ul>
+    라벨 기준은 02_labeling_guide.html 이며, 도구 화면 한쪽에 규칙 세 줄을 짧게 띄워두면 좋다.</li>
+</ol>
+
+<h2>3. 구현자가 정할 것 <span class="muted">(정하고 README에 한 줄씩 적어두면 됨)</span></h2>
+<ul>
+  <li>백본 모델, 입력 크기, 증강, 하이퍼파라미터, 프레임워크(PyTorch 권장이지만 강제 아님)</li>
+  <li>데이터 폴더 구조와 train/val/test 나누는 방식</li>
+  <li>패키지 내부 모듈 구조, CLI 라이브러리, 시각화 방식(matplotlib/OpenCV/PIL 등)</li>
+  <li>확신도가 낮을 때 어떻게 표시할지</li>
+</ul>
+<p>단, 폰 사진이라 <b>EXIF 회전</b>은 처리해야 하고, 증강할 때 <b>패드가 잘려나가면 라벨 의미가 바뀐다</b>는 점은 염두에 둘 것.</p>
+
+<h2>4. 하지 않을 것</h2>
+<ul>
+  <li>웹캠/실시간 판정</li>
+  <li>손 검출·키포인트 같은 2단계 파이프라인 — 순수 이미지 분류만</li>
+  <li>웹 서버, GUI 앱</li>
+</ul>
+
+<h2>5. 클로드코드에게 넘길 프롬프트 (복사용)</h2>
+<div class="card">
+<pre style="white-space:pre-wrap"><code>01_project_spec.html 과 02_labeling_guide.html 을 읽어.
+
+사진을 normal / foul 로 분류하는 이미지 분류 프로젝트를 만들어줘. 스펙 §2의 8가지는 반드시 지키고, §3은 네가 판단해서 정한 뒤 README에 이유를 한 줄씩 적어. §4는 만들지 마.
+
+순서:
+1. 패키지 구조(pyproject.toml, hand_foul/ 패키지, CLI 엔트리포인트) 먼저 잡고
+2. 라벨링 도구(hand-foul label)부터 만들어줘. 내가 사진을 넣을 inbox 폴더도 만들고, 창 띄워서 키 하나로 normal/foul 분류하면 파일이 옮겨지게. 이게 먼저 돼야 내가 데이터를 만들 수 있어.
+3. 학습 코드, 추론 코드(라벨 얹힌 이미지 시각화 포함), Classifier 클래스 순으로 구현하고
+4. 더미 이미지 스모크 테스트를 통과시킨 뒤
+5. README 와 .gitignore 를 쓰고 git init + 첫 커밋까지 해줘.
+
+아직 실제 사진은 없어. 라벨링 도구가 만들어지면 사진 넣고 라벨링해서 학습은 그 다음에 돌릴게.
+끝나면 테스트 결과와 README 를 보여줘.</code></pre>
+</div>
+
+</div>
+</body>
+</html>
