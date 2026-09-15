@@ -15,7 +15,7 @@
 # PyTorch를 먼저 설치하면 GPU 빌드를 고를 수 있습니다 (CPU만 있어도 동작).
 #   https://pytorch.org/get-started/locally/
 
-pip install git+https://github.com/<YOUR_GITHUB_ID>/hand-foul.git
+pip install git+https://github.com/2chong/hand-foul.git
 # 또는 clone 후
 pip install .
 ```
@@ -34,7 +34,7 @@ hand-foul predict photo.jpg
 hand-foul predict my_photos/
 
 # 옵션
-hand-foul predict photo.jpg -w https://github.com/<ID>/hand-foul/releases/download/v0.1.0/best.pt
+hand-foul predict photo.jpg -w https://github.com/2chong/hand-foul/releases/download/v0.1.0/best.pt
 hand-foul predict my_photos/ --show            # 폴더도 한 장씩 창으로 보기 (아무 키로 다음)
 hand-foul predict photo.jpg --no-save --no-show  # 터미널 출력만
 ```
