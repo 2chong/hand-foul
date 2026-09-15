@@ -157,6 +157,8 @@ hand-foul video clip.mp4                         # clip_foul.mp4 저장 + foul �
 hand-foul video clip.mp4 -o result.mp4 --show    # 저장 위치 지정, 처리 중 화면도 표시
 ```
 
+결과 영상은 원본과 같은 해상도·fps 로, 내장 ffmpeg(H.264, CRF 18) 으로 저장되어 원본 화질이 유지됩니다.
+
 키: `q` 종료, `s` 현재 화면을 `live_captures/` 에 저장.
 옵션: `--threshold 0.5` (경고 기준 foul 확률), `--smoothing 0.6` (깜빡임 억제, 높을수록 부드럽지만 반응이 느림), `--every 2` (CPU 가 느리면 N 프레임마다 판정), `--mirror`.
 

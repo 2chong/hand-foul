@@ -81,6 +81,62 @@ def draw_overlay(frame: np.ndarray, foul_prob: float, warning: bool, fps: float 
     return out
 
 
+class _VideoWriter:
+    """H.264 writer via the bundled ffmpeg (imageio-ffmpeg); falls back to OpenCV mp4v.
+
+    OpenCV's own mp4v output is noticeably blockier than the source; ffmpeg with
+    libx264 at CRF 18 keeps the original resolution *and* looks like the original.
+    """
+
+    def __init__(self, path: Path, fps: float, size: tuple[int, int], crf: int = 18):
+        import cv2
+
+        self.path = Path(path)
+        self.proc = None
+        self.cv = None
+        w, h = size
+        try:
+            import subprocess
+
+            import imageio_ffmpeg
+
+            exe = imageio_ffmpeg.get_ffmpeg_exe()
+            cmd = [
+                exe, "-y", "-loglevel", "error",
+                "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", f"{fps:.3f}", "-i", "-",
+                "-an", "-c:v", "libx264", "-preset", "fast", "-crf", str(crf), "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart", str(self.path),
+            ]
+            self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.backend = "ffmpeg/libx264"
+        except Exception:  # no ffmpeg available -> OpenCV
+            codec = "MJPG" if self.path.suffix.lower() == ".avi" else "mp4v"
+            self.cv = cv2.VideoWriter(str(self.path), cv2.VideoWriter_fourcc(*codec), fps, (w, h))
+            if not self.cv.isOpened():
+                raise RuntimeError(f"could not open video writer for {self.path} (try an .avi name)")
+            self.backend = f"opencv/{codec}"
+
+    def write(self, frame) -> None:
+        if self.proc is not None:
+            try:
+                self.proc.stdin.write(frame.tobytes())
+            except (BrokenPipeError, OSError) as e:
+                err = self.proc.stderr.read().decode(errors="replace") if self.proc.stderr else ""
+                raise RuntimeError(f"ffmpeg stopped: {err.strip() or e}")
+        else:
+            self.cv.write(frame)
+
+    def release(self) -> None:
+        if self.proc is not None:
+            self.proc.stdin.close()
+            self.proc.wait()
+            if self.proc.returncode != 0:
+                err = self.proc.stderr.read().decode(errors="replace") if self.proc.stderr else ""
+                raise RuntimeError(f"ffmpeg failed: {err.strip()}")
+        elif self.cv is not None:
+            self.cv.release()
+
+
 def run_live(
     source: str | int = 0,
     weights: str | Path = "weights/best.pt",
@@ -171,10 +227,8 @@ def run_live(
 
             if record:
                 if writer is None:
-                    codec = "MJPG" if record.suffix.lower() == ".avi" else "mp4v"
-                    writer = cv2.VideoWriter(str(record), cv2.VideoWriter_fourcc(*codec), src_fps, (shown.shape[1], shown.shape[0]))
-                    if not writer.isOpened():
-                        raise RuntimeError(f"could not open video writer for {record} (try an .avi name)")
+                    writer = _VideoWriter(record, src_fps, (shown.shape[1], shown.shape[0]))
+                    log(f"recording {shown.shape[1]}x{shown.shape[0]} @ {src_fps:.1f} fps -> {record}  [{writer.backend}]")
                 writer.write(shown)
                 if not show_window and total_frames and n % 50 == 0:
                     log(f"  {n}/{total_frames} frames")
