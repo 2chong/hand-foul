@@ -14,7 +14,14 @@ from torchvision import transforms as T
 
 CLASSES: tuple[str, ...] = ("normal", "foul")
 CLASS_TO_IDX = {c: i for i, c in enumerate(CLASSES)}
-IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".heic", ".heif"}
+
+try:  # iPhone photos: HEIC needs pillow-heif to be registered with Pillow
+    from pillow_heif import register_heif_opener
+
+    register_heif_opener()
+except ImportError:  # pragma: no cover
+    pass
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)

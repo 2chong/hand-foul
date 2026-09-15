@@ -52,7 +52,7 @@ img = clf.annotate("photo.jpg")              # PIL.Image 로 받기
 clf.predict_folder("my_photos/")             # [(Path, result), ...]
 ```
 
-입력은 경로, `PIL.Image`, OpenCV `ndarray`(BGR) 모두 됩니다. 폰 사진의 EXIF 회전은 자동으로 적용됩니다.
+입력은 경로, `PIL.Image`, OpenCV `ndarray`(BGR) 모두 됩니다. JPG/PNG 외에 아이폰 **HEIC** 도 그대로 읽고, 폰 사진의 EXIF 회전은 자동으로 적용됩니다.
 
 ## 3. 내 데이터로 다시 학습하기
 
