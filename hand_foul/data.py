@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 from dataclasses import dataclass
@@ -36,6 +37,15 @@ def load_image(path: str | Path) -> Image.Image:
     img = Image.open(path)
     img = ImageOps.exif_transpose(img)
     return img.convert("RGB")
+
+
+def shrink_to(img: Image.Image, long_side: int) -> Image.Image:
+    """Downscale (never upscale) so the longer side == long_side, keeping aspect."""
+    w, h = img.size
+    if max(w, h) <= long_side:
+        return img
+    s = long_side / max(w, h)
+    return img.resize((max(1, round(w * s)), max(1, round(h * s))), Image.BILINEAR)
 
 
 def list_images(folder: str | Path) -> list[Path]:
@@ -126,16 +136,82 @@ class Sample:
 
 
 class HandFoulDataset(Dataset):
-    def __init__(self, samples: list[Sample], transform):
+    """Dataset over labelled samples.
+
+    Phone photos are huge (24 MP HEIC takes ~1 s to decode), so `preload()`
+    decodes every image once, shrinks it so its longer side == `cache_size`
+    (the letterbox size used by the transforms, so nothing is lost) and keeps
+    the small copy in memory. After that each epoch is just augmentation.
+    """
+
+    def __init__(
+        self,
+        samples: list[Sample],
+        transform,
+        cache_size: int | None = None,
+        cache_dir: str | Path | None = None,
+    ):
         self.samples = list(samples)
         self.transform = transform
+        self.cache_size = cache_size
+        self.cache_dir = Path(cache_dir) / str(cache_size) if (cache_dir and cache_size) else None
+        self._cache: dict[int, Image.Image] = {}
 
     def __len__(self) -> int:
         return len(self.samples)
 
+    def _disk_path(self, idx: int) -> Path | None:
+        if self.cache_dir is None:
+            return None
+        src = self.samples[idx].path
+        key = hashlib.md5(str(src.resolve()).encode("utf-8")).hexdigest()[:12]
+        return self.cache_dir / f"{src.stem}_{key}.jpg"
+
+    def _load_small(self, idx: int) -> tuple[Image.Image, bool]:
+        """Return (shrunk image, came_from_disk_cache)."""
+        dp = self._disk_path(idx)
+        src = self.samples[idx].path
+        if dp is not None and dp.is_file() and dp.stat().st_mtime >= src.stat().st_mtime:
+            with Image.open(dp) as im:
+                return im.convert("RGB"), True
+        img = load_image(src)
+        if self.cache_size:
+            img = shrink_to(img, self.cache_size)
+        if dp is not None:
+            dp.parent.mkdir(parents=True, exist_ok=True)
+            img.save(dp, quality=95)
+        return img, False
+
+    def preload(self, workers: int = 1, log=None) -> None:
+        """Decode + shrink all images once and keep them in memory.
+
+        With `cache_dir` the shrunk copies are also written to disk, so the
+        next training run starts in seconds instead of minutes. HEIC decoding
+        is already multi-threaded inside libheif, so workers=1 is usually best.
+        """
+        if not self.cache_size:
+            return
+        from concurrent.futures import ThreadPoolExecutor
+
+        todo = [i for i in range(len(self.samples)) if i not in self._cache]
+        if not todo:
+            return
+        done = hits = 0
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as ex:
+            for i, (img, hit) in zip(todo, ex.map(self._load_small, todo)):
+                self._cache[i] = img
+                done += 1
+                hits += hit
+                if log and (done % 20 == 0 or done == len(todo)):
+                    log(f"  {done}/{len(todo)}  (from disk cache: {hits})")
+
     def __getitem__(self, idx: int):
         s = self.samples[idx]
-        img = load_image(s.path)
+        img = self._cache.get(idx)
+        if img is None:
+            img, _ = self._load_small(idx)
+            if self.cache_size:
+                self._cache[idx] = img
         return self.transform(img), s.label
 
     def class_counts(self) -> list[int]:

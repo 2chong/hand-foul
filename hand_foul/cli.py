@@ -59,6 +59,8 @@ def train(
     pretrained: bool = typer.Option(True, help="Start from ImageNet weights (downloaded once by torchvision)."),
     device: Optional[str] = typer.Option(None, help="cuda / cpu (default: auto)."),
     num_workers: Optional[int] = typer.Option(None, help="DataLoader workers (default: 0 on Windows, 4 elsewhere)."),
+    cache: bool = typer.Option(True, help="Decode every photo once; keep shrunk copies in memory and in data/.cache/ (fast re-runs)."),
+    decode_workers: int = typer.Option(1, help="Threads for the one-off decoding (HEIC decoding is already multi-threaded)."),
 ):
     """Train on labelled photos, then report test accuracy + confusion matrix."""
     from .train import train as _train
@@ -67,7 +69,8 @@ def train(
         data_dir=data, out=out, runs_dir=runs_dir, run_name=run_name, backbone=backbone,
         img_size=img_size, epochs=epochs, batch_size=batch_size, lr=lr, weight_decay=weight_decay,
         patience=patience, seed=seed, val_ratio=val_ratio, test_ratio=test_ratio,
-        pretrained=pretrained, device=device, num_workers=num_workers, log=typer.echo,
+        pretrained=pretrained, device=device, num_workers=num_workers, cache=cache,
+        decode_workers=decode_workers, log=typer.echo,
     )
 
 

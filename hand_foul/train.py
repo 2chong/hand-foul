@@ -130,6 +130,8 @@ def train(
     pretrained: bool = True,
     device: str | None = None,
     num_workers: int | None = None,
+    cache: bool = True,
+    decode_workers: int = 1,
     log=print,
 ) -> dict:
     """Train a classifier and evaluate it on the test split. Returns metrics."""
@@ -146,9 +148,11 @@ def train(
     # -- data ----------------------------------------------------------------
     splits, info = discover_splits(data_dir, val_ratio=val_ratio, test_ratio=test_ratio, seed=seed)
     save_split(splits, info, run_dir / "split.json")
-    ds_train = HandFoulDataset(splits["train"], train_transforms(img_size))
-    ds_val = HandFoulDataset(splits["val"], eval_transforms(img_size))
-    ds_test = HandFoulDataset(splits["test"], eval_transforms(img_size))
+    cache_size = img_size if cache else None
+    cache_dir = Path(data_dir) / ".cache" if cache else None
+    ds_train = HandFoulDataset(splits["train"], train_transforms(img_size), cache_size, cache_dir)
+    ds_val = HandFoulDataset(splits["val"], eval_transforms(img_size), cache_size, cache_dir)
+    ds_test = HandFoulDataset(splits["test"], eval_transforms(img_size), cache_size, cache_dir)
     pin = dev.type == "cuda"
     dl_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin, drop_last=False)
     dl_val = DataLoader(ds_val, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin)
@@ -157,6 +161,13 @@ def train(
     counts = ds_train.class_counts()
     log(f"device: {dev} | backbone: {backbone} | img_size: {img_size} | layout: {info['layout']}")
     log(f"train {len(ds_train)} {dict(zip(CLASSES, counts))} | val {len(ds_val)} | test {len(ds_test)}")
+    if cache:
+        n_all = len(ds_train) + len(ds_val) + len(ds_test)
+        log(f"decoding {n_all} photos once (24 MP HEIC ~1 s each; shrunk copies cached in {cache_dir}) ...")
+        tc = time.time()
+        for ds in (ds_train, ds_val, ds_test):
+            ds.preload(workers=decode_workers, log=log)
+        log(f"  done in {time.time() - tc:.0f}s")
 
     # -- model ---------------------------------------------------------------
     model = build_model(backbone, pretrained=pretrained).to(dev)
@@ -173,6 +184,8 @@ def train(
     bad_epochs = 0
     for epoch in range(1, epochs + 1):
         te = time.time()
+        if epoch == 1:
+            log("training ...")
         tr_loss, tr_acc, _, _ = _run_epoch(model, dl_train, criterion, dev, optimizer)
         va_loss, va_acc, _, _ = _run_epoch(model, dl_val, criterion, dev)
         scheduler.step()
