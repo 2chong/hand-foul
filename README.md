@@ -119,7 +119,23 @@ hand-foul train --data data/ --device cpu                         # GPU 없이
 hand-foul train --data data/ --run-name exp1 --out weights/exp1.pt
 ```
 
-### 3-3. 가중치 배포
+### 3-3. 따로 모은 테스트셋으로 성능 평가 (`hand-foul eval`)
+
+학습에 안 쓴 사진으로 진짜 성능을 재려면, 정답대로 `normal/` `foul/` 폴더에 나눠 넣고 실행합니다. (사진을 `tests_set/inbox/` 에 넣고 `hand-foul label --data tests_set` 으로 키를 눌러 나눠도 됩니다.)
+
+```
+tests_set/
+  normal/  *.jpg
+  foul/    *.jpg
+```
+
+```bash
+hand-foul eval tests_set
+```
+
+정확도, confusion matrix, 클래스별 precision / recall 과 **틀린 사진 목록**이 출력되고, `eval/` 에 `confusion_matrix.png`, `metrics.json`, `results.json`, 틀린 사진의 결과 이미지(`wrong/`)가 저장됩니다. `--save-all` 을 붙이면 맞은 사진도 `correct/` 에 저장합니다.
+
+### 3-4. 가중치 배포
 
 `weights/*.pt` 는 `.gitignore` 되어 있습니다. 학습한 `weights/best.pt` 를 GitHub Release 에 첨부하고, 그 URL 을 README 의 `-w` 예시에 적어 두면 다른 사람은 `Classifier.from_pretrained(URL)` 로 바로 씁니다. ResNet18 가중치는 약 45 MB 라 레포에 직접 넣지 않고 Release 를 사용합니다.
 
@@ -158,11 +174,12 @@ pytest
 ```
 hand_foul/
   __init__.py   Classifier, CLASSES, __version__
-  cli.py        hand-foul label | train | predict
+  cli.py        hand-foul label | train | predict | eval
   data.py       EXIF 로딩, Letterbox/증강, 데이터셋, train/val/test 분할
   model.py      백본 생성, 체크포인트 저장/로드
   train.py      학습 루프, confusion matrix, 지표 저장
   predict.py    Classifier (predict / annotate / show), 폴더 추론
+  evaluate.py   라벨된 폴더로 정확도 / confusion matrix / 오답 목록
   label.py      라벨링 도구 (LabelSession 로직 + OpenCV 창)
   draw.py       폰트 탐색, 결과 이미지 그리기
 tests/test_smoke.py

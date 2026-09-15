@@ -95,6 +95,14 @@ def test_train_predict_show_end_to_end(dummy_data: Path, tmp_path: Path):
     with Image.open(out_img) as im:
         assert im.size == Image.open(sample).size
 
+    # evaluation on a labelled folder
+    from hand_foul.evaluate import evaluate
+
+    ev = evaluate(dummy_data, weights=weights, out_dir=tmp_path / "eval", device="cpu", log=lambda *_: None)
+    assert ev["n"] == 24 and 0.0 <= ev["accuracy"] <= 1.0
+    assert sum(map(sum, ev["confusion_matrix"])) == 24
+    assert (tmp_path / "eval" / "confusion_matrix.png").is_file()
+
     # CLI
     runner = CliRunner()
     r = runner.invoke(app, ["predict", str(dummy_data / "foul"), "-w", str(weights), "-o", str(tmp_path / "preds"), "--no-show", "--device", "cpu"])

@@ -3,10 +3,12 @@ data/**
 !data/**/
 !data/**/.gitkeep
 hand_photos/
+tests_set/
 
 # --- training / inference artefacts -----------------------------------------
 runs/
-predictions/
+predictions*/
+eval/
 weights/*.pt
 weights/*.pth
 !weights/.gitkeep

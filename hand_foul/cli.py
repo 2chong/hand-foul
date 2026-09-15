@@ -96,5 +96,23 @@ def predict(
         raise typer.Exit(code=1)
 
 
+@app.command("eval")
+def eval_cmd(
+    data: Path = typer.Argument(Path("tests_set"), help="Folder with <data>/normal/ and <data>/foul/ (the answers)."),
+    weights: str = typer.Option("weights/best.pt", "--weights", "-w", help="Checkpoint path or http(s) URL."),
+    out: Optional[Path] = typer.Option(Path("eval"), "--out", "-o", help="Where to write metrics, confusion matrix and wrong/*.jpg."),
+    save_all: bool = typer.Option(False, help="Also save annotated copies of the correct ones (eval/correct/)."),
+    device: Optional[str] = typer.Option(None, help="cuda / cpu (default: auto)."),
+):
+    """Score the model on a hand-labelled folder: accuracy, confusion matrix, list of mistakes."""
+    from .evaluate import evaluate
+
+    try:
+        evaluate(data, weights=weights, out_dir=out, device=device, save_all=save_all, log=typer.echo)
+    except FileNotFoundError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":  # python -m hand_foul.cli
     app()
