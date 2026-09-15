@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from .data import IMG_EXTS, eval_transforms, list_images, load_image
+from .data import IMAGENET_MEAN, IMAGENET_STD, IMG_EXTS, PAD_FILL, eval_transforms, list_images, load_image
 from .draw import annotate_prediction, fit_within, pil_to_bgr
 from .model import load_checkpoint, pick_device
 
@@ -54,6 +54,11 @@ class Classifier:
         self.classes: list[str] = list(meta["classes"])
         self.img_size: int = int(meta["img_size"])
         self.transform = eval_transforms(self.img_size)
+        self._mean = torch.tensor(IMAGENET_MEAN, device=device).view(1, 3, 1, 1)
+        self._std = torch.tensor(IMAGENET_STD, device=device).view(1, 3, 1, 1)
+        self.use_amp = device.type == "cuda"
+        if self.use_amp:
+            torch.backends.cudnn.benchmark = True
 
     # -- construction --------------------------------------------------------
     @classmethod
@@ -63,13 +68,41 @@ class Classifier:
         return cls(model, meta, dev)
 
     # -- inference -----------------------------------------------------------
+    def _letterbox_bgr(self, frame: np.ndarray) -> np.ndarray:
+        """Fast OpenCV letterbox for video frames (same geometry as data.Letterbox), returns RGB uint8."""
+        import cv2
+
+        size = self.img_size
+        h, w = frame.shape[:2]
+        s = size / max(w, h)
+        nw, nh = max(1, round(w * s)), max(1, round(h * s))
+        small = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR)
+        canvas = np.full((size, size, 3), PAD_FILL[::-1], dtype=np.uint8)  # BGR fill
+        x0, y0 = (size - nw) // 2, (size - nh) // 2
+        canvas[y0 : y0 + nh, x0 : x0 + nw] = small if small.ndim == 3 else cv2.cvtColor(small, cv2.COLOR_GRAY2BGR)
+        return canvas[:, :, ::-1]
+
+    def _to_batch(self, images: list) -> torch.Tensor:
+        if all(isinstance(im, np.ndarray) for im in images):
+            arr = np.stack([np.ascontiguousarray(self._letterbox_bgr(im)) for im in images])
+            x = torch.from_numpy(arr).to(self.device, non_blocking=True)
+            x = x.permute(0, 3, 1, 2).float().div_(255.0)
+            return (x - self._mean) / self._std
+        return torch.stack([self.transform(_to_pil(im)) for im in images]).to(self.device)
+
     @torch.no_grad()
     def predict_probs(self, images: list) -> np.ndarray:
-        """Softmax probabilities, shape (N, num_classes)."""
+        """Softmax probabilities, shape (N, num_classes).
+
+        OpenCV BGR frames take a fast path (cv2 resize + GPU normalise, fp16 on CUDA);
+        paths / PIL images go through the exact training-time transform.
+        """
         if not images:
             return np.zeros((0, len(self.classes)), dtype=np.float32)
-        batch = torch.stack([self.transform(_to_pil(im)) for im in images]).to(self.device)
-        return torch.softmax(self.model(batch), dim=1).cpu().numpy()
+        batch = self._to_batch(images)
+        with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=self.use_amp):
+            logits = self.model(batch)
+        return torch.softmax(logits.float(), dim=1).cpu().numpy()
 
     def _result(self, probs: np.ndarray) -> dict:
         idx = int(probs.argmax())
