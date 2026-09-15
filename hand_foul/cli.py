@@ -114,5 +114,28 @@ def eval_cmd(
         raise typer.Exit(code=1)
 
 
+@app.command()
+def live(
+    source: str = typer.Option("0", "--source", "-s", help="Webcam index (0, 1, ...) or stream URL (http://<phone-ip>:8080/video)."),
+    weights: str = typer.Option("weights/best.pt", "--weights", "-w", help="Checkpoint path or http(s) URL."),
+    threshold: float = typer.Option(0.5, help="Smoothed foul probability above which the WARNING is shown."),
+    smoothing: float = typer.Option(0.6, help="0 = react instantly, 0.9 = very smooth (less flicker, more lag)."),
+    every: int = typer.Option(1, help="Run the model every N frames (raise on a slow CPU)."),
+    width: Optional[int] = typer.Option(None, help="Request this capture width from the camera."),
+    mirror: bool = typer.Option(False, help="Flip the image horizontally."),
+    save_dir: Path = typer.Option(Path("live_captures"), help="Where the s key saves frames."),
+    device: Optional[str] = typer.Option(None, help="cuda / cpu (default: auto)."),
+):
+    """Real-time foul detection from a webcam or phone camera (red border + WARNING on foul)."""
+    from .live import run_live
+
+    try:
+        run_live(source=source, weights=weights, threshold=threshold, smoothing=smoothing, every=every,
+                 width=width, mirror=mirror, save_dir=save_dir, device=device, log=typer.echo)
+    except (RuntimeError, FileNotFoundError) as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":  # python -m hand_foul.cli
     app()

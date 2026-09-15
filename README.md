@@ -139,7 +139,30 @@ hand-foul eval tests_set
 
 `weights/*.pt` 는 `.gitignore` 되어 있습니다. 학습한 `weights/best.pt` 를 GitHub Release 에 첨부하고, 그 URL 을 README 의 `-w` 예시에 적어 두면 다른 사람은 `Classifier.from_pretrained(URL)` 로 바로 씁니다. ResNet18 가중치는 약 45 MB 라 레포에 직접 넣지 않고 Release 를 사용합니다.
 
-## 4. 테스트
+## 4. 실시간 판정 (`hand-foul live`)
+
+카메라 영상을 프레임마다 판정해서, foul 이면 화면 **가장자리를 굵은 빨간색**으로 깜빡이며 `WARNING` 을 띄우고, normal 이면 얇은 초록 테두리를 그립니다.
+
+```bash
+hand-foul live                       # 기본 웹캠 (index 0)
+hand-foul live --source 1            # 다른 카메라
+hand-foul live --source http://192.168.0.12:8080/video   # 휴대폰 IP 카메라
+```
+
+키: `q` 종료, `s` 현재 화면을 `live_captures/` 에 저장.
+옵션: `--threshold 0.5` (경고 기준 foul 확률), `--smoothing 0.6` (깜빡임 억제, 높을수록 부드럽지만 반응이 느림), `--every 2` (CPU 가 느리면 N 프레임마다 판정), `--mirror`.
+
+**휴대폰을 카메라로 쓰는 방법 (Windows)**
+
+| 방법 | 폰 | 사용 |
+|---|---|---|
+| Windows 11 "연결된 카메라" (휴대폰과 연결 앱) | Android | 설정 → Bluetooth 및 장치 → 모바일 장치 → 연결된 카메라로 사용 → `--source 0` 또는 `1` |
+| Camo / DroidCam / Iriun 같은 가상 웹캠 앱 | iPhone, Android | PC 앱 + 폰 앱 설치, USB 나 Wi-Fi 연결 → 웹캠 index 로 열림 (`--source 0`, 안 되면 `1`, `2`) |
+| IP Webcam (Android) / DroidCam 의 IP 모드 | Android, iPhone | 같은 Wi-Fi 에서 앱이 알려주는 주소 → `--source http://<폰IP>:8080/video` (DroidCam 은 `:4747/video`) |
+
+학습 사진과 같은 구도(패드를 위에서 내려다보는 각도, 패드 네 변이 다 보이게)로 폰을 고정해야 정확합니다.
+
+## 5. 테스트
 
 ```bash
 pip install -e ".[dev]"
@@ -148,7 +171,7 @@ pytest
 
 실제 사진 없이 더미 이미지(회색 담요 + 빨간 테두리 검정 패드 + 살색 원)를 만들어 **학습 → 가중치 저장 → 추론 → 결과 이미지 저장 → CLI** 까지 한 번에 도는 스모크 테스트와, 라벨링 도구의 이동/되돌리기/이어하기 로직 테스트가 들어 있습니다. CPU 에서 15초 안팎입니다.
 
-## 5. 구현에서 정한 것과 이유
+## 6. 구현에서 정한 것과 이유
 
 | 항목 | 결정 | 이유 |
 |---|---|---|
@@ -165,21 +188,22 @@ pytest
 | 체크포인트 | `state_dict` + 메타(backbone, img_size, classes) 를 한 `.pt` 에 저장, `weights_only=True` 로 로드 | 다른 사람이 받은 파일 하나로 모델 구성까지 복원 가능 |
 | DataLoader | Windows 는 `num_workers=0` 기본 | Windows 의 spawn 방식에서 멀티프로세스 로더가 자주 막힘 |
 
-## 6. 만들지 않은 것 (스펙 §4)
+## 7. 만들지 않은 것
 
-웹캠/실시간 판정, 손 검출·키포인트 기반 2단계 파이프라인, 웹 서버·GUI 앱.
+손 검출·키포인트 기반 2단계 파이프라인, 웹 서버·GUI 앱. (실시간 판정은 원래 스펙에서 제외였지만 요청으로 §4 에 추가됨)
 
-## 7. 프로젝트 구조
+## 8. 프로젝트 구조
 
 ```
 hand_foul/
   __init__.py   Classifier, CLASSES, __version__
-  cli.py        hand-foul label | train | predict | eval
+  cli.py        hand-foul label | train | predict | eval | live
   data.py       EXIF 로딩, Letterbox/증강, 데이터셋, train/val/test 분할
   model.py      백본 생성, 체크포인트 저장/로드
   train.py      학습 루프, confusion matrix, 지표 저장
   predict.py    Classifier (predict / annotate / show), 폴더 추론
   evaluate.py   라벨된 폴더로 정확도 / confusion matrix / 오답 목록
+  live.py       카메라 실시간 판정 (빨간 테두리 WARNING)
   label.py      라벨링 도구 (LabelSession 로직 + OpenCV 창)
   draw.py       폰트 탐색, 결과 이미지 그리기
 tests/test_smoke.py

@@ -9,6 +9,7 @@ tests_set/
 runs/
 predictions*/
 eval/
+live_captures/
 weights/*.pt
 weights/*.pth
 !weights/.gitkeep

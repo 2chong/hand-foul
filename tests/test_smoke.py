@@ -142,3 +142,17 @@ def test_label_session_move_and_undo(tmp_path: Path):
     s2 = LabelSession(data)
     assert [p.name for p in s2.queue] == ["p2.jpg"]
     assert s2.undo() is None
+
+
+def test_live_overlay_draws_red_border_on_foul():
+    import numpy as np
+    from hand_foul.live import draw_overlay
+
+    frame = np.full((240, 320, 3), 128, dtype=np.uint8)
+    warn = draw_overlay(frame, foul_prob=0.9, warning=True, fps=12.0, tick=0.3)
+    ok = draw_overlay(frame, foul_prob=0.1, warning=False, fps=12.0, tick=0.3)
+    assert warn.shape == ok.shape == frame.shape
+    b, g, r = warn[120, 2]  # left border pixel, BGR
+    assert r > 150 and g < 100  # red border when warning
+    b, g, r = ok[120, 2]
+    assert g > 120 and r < 120  # green border when normal
