@@ -116,7 +116,7 @@ def eval_cmd(
 
 @app.command()
 def live(
-    source: str = typer.Option("0", "--source", "-s", help="Webcam index (0, 1, ...) or stream URL (http://<phone-ip>:8080/video)."),
+    source: str = typer.Option("0", "--source", "-s", help="Webcam index (0, 1, ...), video file (clip.mp4) or stream URL (http://<phone-ip>:8080/video)."),
     weights: str = typer.Option("weights/best.pt", "--weights", "-w", help="Checkpoint path or http(s) URL."),
     threshold: float = typer.Option(0.5, help="Smoothed foul probability above which the WARNING is shown."),
     smoothing: float = typer.Option(0.6, help="0 = react instantly, 0.9 = very smooth (less flicker, more lag)."),
@@ -124,18 +124,44 @@ def live(
     width: Optional[int] = typer.Option(None, help="Request this capture width from the camera."),
     mirror: bool = typer.Option(False, help="Flip the image horizontally."),
     save_dir: Path = typer.Option(Path("live_captures"), help="Where the s key saves frames."),
+    record: Optional[Path] = typer.Option(None, "--record", "-r", help="Also write the overlaid video to this file (.mp4/.avi)."),
     device: Optional[str] = typer.Option(None, help="cuda / cpu (default: auto)."),
 ):
-    """Real-time foul detection from a webcam or phone camera (red border + WARNING on foul)."""
+    """Real-time foul detection from a webcam, phone camera or video file (red border + WARNING on foul)."""
     from .live import run_live
 
     try:
         run_live(source=source, weights=weights, threshold=threshold, smoothing=smoothing, every=every,
-                 width=width, mirror=mirror, save_dir=save_dir, device=device, log=typer.echo)
+                 width=width, mirror=mirror, save_dir=save_dir, device=device, record=record, log=typer.echo)
     except (RuntimeError, FileNotFoundError) as e:
         typer.echo(f"error: {e}", err=True)
         raise typer.Exit(code=1)
 
+
+@app.command()
+def video(
+    source: Path = typer.Argument(..., help="Input video file."),
+    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Output video (default: <name>_foul.mp4 next to the input)."),
+    weights: str = typer.Option("weights/best.pt", "--weights", "-w", help="Checkpoint path or http(s) URL."),
+    threshold: float = typer.Option(0.5, help="Smoothed foul probability above which the WARNING is shown."),
+    smoothing: float = typer.Option(0.6, help="0 = react instantly, 0.9 = very smooth."),
+    every: int = typer.Option(1, help="Run the model every N frames (faster)."),
+    show: bool = typer.Option(False, "--show/--no-show", help="Also play it in a window while processing."),
+    device: Optional[str] = typer.Option(None, help="cuda / cpu (default: auto)."),
+):
+    """Process a video file: writes a copy with the red WARNING overlay and prints the foul time segments."""
+    from .live import run_live
+
+    if not source.is_file():
+        typer.echo(f"error: video not found: {source}", err=True)
+        raise typer.Exit(code=1)
+    out = out or source.with_name(f"{source.stem}_foul.mp4")
+    try:
+        run_live(source=str(source), weights=weights, threshold=threshold, smoothing=smoothing, every=every,
+                 device=device, record=out, show_window=show, realtime=False, log=typer.echo)
+    except (RuntimeError, FileNotFoundError) as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(code=1)
 
 if __name__ == "__main__":  # python -m hand_foul.cli
     app()

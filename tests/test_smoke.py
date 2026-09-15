@@ -103,6 +103,21 @@ def test_train_predict_show_end_to_end(dummy_data: Path, tmp_path: Path):
     assert sum(map(sum, ev["confusion_matrix"])) == 24
     assert (tmp_path / "eval" / "confusion_matrix.png").is_file()
 
+    # video file -> annotated video + foul segments (headless)
+    import cv2
+    from hand_foul.live import run_live
+
+    clip = tmp_path / "clip.mp4"
+    vw = cv2.VideoWriter(str(clip), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (96, 96))
+    for cls in ("normal", "foul"):
+        for p in sorted((dummy_data / cls).glob("*.jpg"))[:6]:
+            vw.write(cv2.imread(str(p)))
+    vw.release()
+    out_clip = tmp_path / "clip_foul.mp4"
+    summary = run_live(source=str(clip), weights=weights, record=out_clip, show_window=False, device="cpu", log=lambda *_: None)
+    assert summary["frames"] == 12 and out_clip.is_file() and out_clip.stat().st_size > 0
+    assert all(a <= b for a, b in summary["foul_segments"])
+
     # CLI
     runner = CliRunner()
     r = runner.invoke(app, ["predict", str(dummy_data / "foul"), "-w", str(weights), "-o", str(tmp_path / "preds"), "--no-show", "--device", "cpu"])

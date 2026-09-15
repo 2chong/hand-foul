@@ -149,6 +149,14 @@ hand-foul live --source 1            # 다른 카메라
 hand-foul live --source http://192.168.0.12:8080/video   # 휴대폰 IP 카메라
 ```
 
+**영상 파일**도 됩니다. 창으로 재생하며 보려면 `live`, 창 없이 결과 영상만 만들려면 `video`:
+
+```bash
+hand-foul live --source clip.mp4                 # 재생하며 판정 (--record out.mp4 로 저장도 가능)
+hand-foul video clip.mp4                         # clip_foul.mp4 저장 + foul 구간(00:12.3-00:15.0) 출력
+hand-foul video clip.mp4 -o result.mp4 --show    # 저장 위치 지정, 처리 중 화면도 표시
+```
+
 키: `q` 종료, `s` 현재 화면을 `live_captures/` 에 저장.
 옵션: `--threshold 0.5` (경고 기준 foul 확률), `--smoothing 0.6` (깜빡임 억제, 높을수록 부드럽지만 반응이 느림), `--every 2` (CPU 가 느리면 N 프레임마다 판정), `--mirror`.
 
@@ -197,13 +205,13 @@ pytest
 ```
 hand_foul/
   __init__.py   Classifier, CLASSES, __version__
-  cli.py        hand-foul label | train | predict | eval | live
+  cli.py        hand-foul label | train | predict | eval | live | video
   data.py       EXIF 로딩, Letterbox/증강, 데이터셋, train/val/test 분할
   model.py      백본 생성, 체크포인트 저장/로드
   train.py      학습 루프, confusion matrix, 지표 저장
   predict.py    Classifier (predict / annotate / show), 폴더 추론
   evaluate.py   라벨된 폴더로 정확도 / confusion matrix / 오답 목록
-  live.py       카메라 실시간 판정 (빨간 테두리 WARNING)
+  live.py       카메라 / 영상 파일 실시간 판정 (빨간 테두리 WARNING), 결과 영상 저장
   label.py      라벨링 도구 (LabelSession 로직 + OpenCV 창)
   draw.py       폰트 탐색, 결과 이미지 그리기
 tests/test_smoke.py
